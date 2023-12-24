@@ -4,6 +4,7 @@
 /* Recommended max cache and object sizes */
 #define MAX_CACHE_SIZE 1049000
 #define MAX_OBJECT_SIZE 102400
+#define MAX_OBJECT_NUM 
 
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
@@ -18,7 +19,7 @@ void clienterror(int fd, char *cause, char *errnum,
 void parse_request_header(char* request_header, char* header, char* body,int maxlen);
 void extract_hostname_port_uri(const char *url, char *hostname, int *port, char *uri);
 void send_http_request(int clientfd, const char *method, const char *url, const char *version, const char *request_header);
-size_t receive_http_response(int clientfd, char *outputBuffer, int bufferSize);
+size_t receive_http_response(int clientfd, int serverfd,char *outputBuffer, int bufferSize);
 void* thread(void* fd);
 int main(int argc, char** argv)
 {
@@ -92,9 +93,7 @@ void doit(int fd){
     int clientfd = Open_clientfd(hostname,port);
 
     send_http_request(clientfd, method, uri, version_for_proxy, final_req_header_buf);
-    size_t total_bytes_received=receive_http_response(clientfd,output_buff,MAX_OBJECT_SIZE);
-    Rio_writen(fd, output_buff, total_bytes_received);
-
+    receive_http_response(fd,clientfd,output_buff,MAX_OBJECT_SIZE);
     Close(clientfd);
     return;
 }
@@ -200,16 +199,13 @@ void send_http_request(int clientfd, const char *method, const char *url, const 
 
     printf("HTTP Request sent successfully\n");
 }
-size_t receive_http_response(int clientfd, char *outputBuffer, int bufferSize) {
+size_t receive_http_response(int clientfd,int serverfd, char *outputBuffer, int bufferSize) {
     size_t total_bytes_received = 0;
     size_t bytes_received;
-    while ((bytes_received = Rio_readn(clientfd, outputBuffer + total_bytes_received, bufferSize - total_bytes_received - 1)) > 0) {
+    while ((bytes_received = Rio_readn(serverfd, outputBuffer, bufferSize)) > 0) {
         total_bytes_received += bytes_received;
         // 检查是否到达缓冲区的末尾
-        if (total_bytes_received >= bufferSize - 1) {
-            printf("Response buffer full\n");
-            break;
-        }
+        Rio_writen(clientfd, outputBuffer, bytes_received);
     }
     if (bytes_received < 0) {
         perror("Error receiving response");
