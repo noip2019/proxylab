@@ -19,6 +19,7 @@ void parse_request_header(char* request_header, char* header, char* body,int max
 void extract_hostname_port_uri(const char *url, char *hostname, int *port, char *uri);
 void send_http_request(int clientfd, const char *method, const char *url, const char *version, const char *request_header);
 size_t receive_http_response(int clientfd, char *outputBuffer, int bufferSize);
+void* thread(void* fd);
 int main(int argc, char** argv)
 {
     int listenfd,connfd;
@@ -30,32 +31,39 @@ int main(int argc, char** argv)
         exit(1);
     }
     listenfd = Open_listenfd(argv[1]);
-    if(connfd<0)
+    if(listenfd<0)
             exit(1);
     while(1){
         clientlen = sizeof(clientaddr);
+
         connfd = Accept(listenfd, (SA*)&clientaddr, &clientlen);
+
         if(connfd<0)
             exit(1);
         Getnameinfo((SA*)&clientaddr, clientlen, hostname, MAXLINE, port,MAXLINE,0);
-
-        doit(connfd);
-        Close(connfd);
+        pthread_t tid;
+        Pthread_create(&tid,NULL,thread,(void*)connfd);
     }
     return 0;
 }
-
+void* thread(void* fd){
+    Pthread_detach(pthread_self());
+    doit((int)fd);
+    Close((int)fd);
+    return NULL;
+}
 void doit(int fd){
     char buf[MAXLINE], method[MAXLINE], url[MAXLINE], version[MAXLINE];
     char hostname[MAXLINE/2],port[MAXLINE],uri[MAXLINE];
+
     char req_header_buf[MAXLINE];
     char final_req_header_buf[MAXLINE];
     char output_buff[MAX_OBJECT_SIZE];
     rio_t rio;
 
     /* Read request line and headers */
-    rio_readinitb(&rio, fd);
-    if (!rio_readlineb(&rio, buf, MAXLINE))  //line:netp:doit:readrequest
+    Rio_readinitb(&rio, fd);
+    if (!Rio_readlineb(&rio, buf, MAXLINE))  //line:netp:doit:readrequest
         return;
     sscanf(buf, "%s %s %s", method, url, version);       //line:netp:doit:parserequest
 
@@ -139,7 +147,7 @@ void read_requesthdrs(rio_t *rp, char *req_header_buf, char* host)
     char buf[MAXLINE];
     req_header_buf[0]='\0';
     while(1) {          //line:netp:readhdrs:checkterm
-        rio_readlineb(rp, buf, MAXLINE);
+        Rio_readlineb(rp, buf, MAXLINE);
         if(!strcmp(buf, "\r\n"))break;
         char header[MAXLINE],body[MAXLINE];
         parse_request_header(buf,header,body,MAXLINE);
@@ -195,7 +203,7 @@ void send_http_request(int clientfd, const char *method, const char *url, const 
 size_t receive_http_response(int clientfd, char *outputBuffer, int bufferSize) {
     size_t total_bytes_received = 0;
     size_t bytes_received;
-    while ((bytes_received = recv(clientfd, outputBuffer + total_bytes_received, bufferSize - total_bytes_received - 1)) > 0) {
+    while ((bytes_received = Rio_readn(clientfd, outputBuffer + total_bytes_received, bufferSize - total_bytes_received - 1)) > 0) {
         total_bytes_received += bytes_received;
         // 检查是否到达缓冲区的末尾
         if (total_bytes_received >= bufferSize - 1) {
